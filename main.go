@@ -178,12 +178,19 @@ func main() {
 
 	defer db.Close()
 	
+	categoryRepo := repositories.NewCategoryRepository(db)
+	categoryService := services.NewCategoryService(categoryRepo)
+	categoryHandler := handlers.NewCategoryHandler(categoryService)
+
 	productRepo := repositories.NewProductRepository(db)
-	productService := services.NewProductService(productRepo)
+	productService := services.NewProductService(productRepo, categoryRepo)
 	productHandler := handlers.NewProductHandler(productService)
 
 	http.HandleFunc("/api/products", productHandler.HandleProducts)
 	http.HandleFunc("/api/product/", productHandler.HandleProductByID)
+
+	http.HandleFunc("/api/categories", categoryHandler.HandleCategory)
+	http.HandleFunc("/api/category/", categoryHandler.HandleCategoryByID)
 
 	// localhost:8080/health
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
