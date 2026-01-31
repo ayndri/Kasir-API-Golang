@@ -3,9 +3,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"kasir-api/database"
+	"kasir-api/handlers"
+	"kasir-api/repositories"
+	"kasir-api/services"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/viper"
 )
 
 type Product struct {
@@ -15,10 +23,22 @@ type Product struct {
 	Stock int 		`json:"stock"`
 }
 
+type Category struct {
+	ID    		int 		`json:"id"`
+	Name  		string 	`json:"name"`
+	Description string 	`json:"description"`
+}
+
 var products = []Product{
 	{ID: 1, Name: "Product 1", Price: 1000, Stock: 10},
 	{ID: 2, Name: "Product 2", Price: 2000, Stock: 20},
 	{ID: 3, Name: "Product 3", Price: 3000, Stock: 30},
+}
+
+var categories = []Category{
+	{ID: 1, Name: "Category 1", Description: "Description 1"},
+	{ID: 2, Name: "Category 2", Description: "Description 2"},
+	{ID: 3, Name: "Category 3", Description: "Description 3"},
 }
 
 func getProductByID(w http.ResponseWriter, r *http.Request) {
@@ -110,44 +130,60 @@ func deleteProductByID(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Product not found", http.StatusNotFound)
 }
 
+// Function for category
+func getAllCategories(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(categories)
+}
+
+func createCategory(w http.ResponseWriter, r *http.Request) {
+	var newCategory Category
+	err := json.NewDecoder(r.Body).Decode(&newCategory)
+	if err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	newCategory.ID = len(categories) + 1
+	categories = append(categories, newCategory)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(newCategory)
+}
+
+type Config struct {
+	Port   string `mapstructure:"PORT"`
+	DBConn string `mapstructure:"DB_CONN"`
+}
+
 func main() {
-	// GET localhost:8080/api/product/{id}
-	// PUT localhost:8080/api/product/{id}
-	// DELETE localhost:8080/api/product/{id}
-	http.HandleFunc("/api/product/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" {
-			getProductByID(w,r)
-		} else if r.Method == "PUT" {
-			updateProductByID(w,r)
-		} else if r.Method == "DELETE" {
-			deleteProductByID(w,r)
-		}
-	})
+	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	// GET localhost:8080/api/products
-	// POST localhost:8080/api/product
-	http.HandleFunc("/api/products", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(products)
-		} else if r.Method == "POST" {
-			var newProduct Product
-			err := json.NewDecoder(r.Body).Decode(&newProduct)
-			if err != nil {
-				http.Error(w, "Invalid request", http.StatusBadRequest)
-				return
-			}
+	if _, err := os.Stat(".env"); err == nil {
+		viper.SetConfigFile(".env")
+		_ = viper.ReadInConfig()
+	}
 
-			// masuk ke dalam var product
-			newProduct.ID = len(products) + 1
-			products = append(products, newProduct)
+	config := Config{
+			Port:   viper.GetString("PORT"),
+			DBConn: viper.GetString("DB_CONN"),
+	}
 
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(newProduct)
-		}
-		
-	})
+	db, err := database.InitDB(config.DBConn)
+	if err != nil {
+		log.Fatalf("Error connecting to database: %v", err)
+	}
+
+	defer db.Close()
+	
+	productRepo := repositories.NewProductRepository(db)
+	productService := services.NewProductService(productRepo)
+	productHandler := handlers.NewProductHandler(productService)
+
+	http.HandleFunc("/api/products", productHandler.HandleProducts)
+	http.HandleFunc("/api/product/", productHandler.HandleProductByID)
 
 	// localhost:8080/health
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -158,9 +194,9 @@ func main() {
 		})
 		// w.Write([]byte("OK"))
 	}) 
-	fmt.Println("Server running di localhost:8080")
+	fmt.Println("Server running di localhost:" + config.Port)
 
-	err := http.ListenAndServe(":8080", nil)
+	err = http.ListenAndServe(":" + config.Port, nil)
 	if err != nil {
 		fmt.Println("gagal running server")
 	}
