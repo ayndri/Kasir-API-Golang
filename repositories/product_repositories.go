@@ -14,7 +14,7 @@ func NewProductRepository(db *sql.DB) *ProductRepository {
 	return &ProductRepository{db: db}
 }
 
-func (repo *ProductRepository) GetAll() ([]models.Product, error) {
+func (repo *ProductRepository) GetAll(nameFilter string) ([]models.Product, error) {
     query := `
         SELECT 
             p.id, p.name, p.price, p.stock, 
@@ -23,10 +23,18 @@ func (repo *ProductRepository) GetAll() ([]models.Product, error) {
             COALESCE(c.name, ''),
             COALESCE(c.description, '')
         FROM products p 
-        LEFT JOIN categories c ON c.id = p.category_id
-        ORDER BY p.id ASC`
+        LEFT JOIN categories c ON c.id = p.category_id`
+
+    args := []interface{}{}
+
+    if nameFilter != "" {
+        query += " WHERE p.name ILIKE $1"
+        args = append(args, "%"+nameFilter+"%")
+    }
         
-    rows, err := repo.db.Query(query)
+    query += " ORDER BY p.id ASC"
+
+    rows, err := repo.db.Query(query, args...)
     if err != nil {
         return nil, err
     }
@@ -41,7 +49,7 @@ func (repo *ProductRepository) GetAll() ([]models.Product, error) {
             &p.Price, 
             &p.Stock, 
             &p.CategoryID,
-            &p.Category.ID,
+            &p.Category.ID, 
             &p.Category.Name,
             &p.Category.Description,
         )
